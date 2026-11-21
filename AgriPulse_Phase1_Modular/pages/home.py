@@ -15,6 +15,15 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
+
+def get_backend_secret(name: str) -> str:
+    """Read deployment credentials without exposing them in the page UI."""
+    try:
+        return str(st.secrets.get(name, "")).strip()
+    except (FileNotFoundError, KeyError):
+        return ""
+
+
 st.set_page_config(
     page_title="AgriPulse MP",
     page_icon=" ",
@@ -586,7 +595,7 @@ MSP_BY_CROP = {
 def fetch_data_gov_prices(api_key, crop):
     """Fetch real Data.gov.in market-level records; never synthesize prices."""
     if not api_key or not api_key.strip():
-        return pd.DataFrame(), "Data.gov.in API key missing. Sidebar mein key enter karein."
+        return pd.DataFrame(), "Government mandi API is not configured."
 
     aliases = CROP_ALIASES.get(crop, [crop.lower()])
     # API filter values may be exact-match and case-sensitive.
@@ -868,7 +877,7 @@ def ask_ai(
     uploaded_image=None, ml_diagnosis=None
 ):
     if not api_key.strip():
-        raise ValueError("Sidebar mein OpenRouter API key paste karo. Key openrouter.ai se banao.")
+        raise ValueError("AI assistant temporarily unavailable. Contact the app administrator.")
 
     market_records = (
         market_df.to_dict(orient="records")
@@ -1292,11 +1301,9 @@ with st.sidebar:
 
     st.header("Farmer Profile")
 
-    api_key = st.text_input(
-        "OpenRouter API Key",
-        type="password",
-        placeholder="Paste OpenRouter key (sk-or-...)" ,
-    )
+    # Backend credential: configured in Streamlit Cloud > App settings > Secrets.
+    # Never ask visitors to enter or view the application's API key.
+    api_key = get_backend_secret("OPENROUTER_API_KEY")
     st.caption("Mandi prices: Government Data.gov.in API (on request) + automatic bundled CSV backup")
 
     farmer = st.text_input(
@@ -1329,13 +1336,7 @@ with st.sidebar:
     st.divider()
     st.subheader("Market data")
     st.caption("Government source: Data.gov.in • Resource: Daily mandi prices (AGMARKNET)")
-    data_gov_key = st.text_input(
-        "Government Data.gov.in API Key",
-        type="password",
-        placeholder="Paste Data.gov.in API key",
-        help="Ye key sirf Government mandi-price API request ke liye use hogi. OpenRouter key se alag hai.",
-        key="data_gov_mandi_api_key",
-    )
+    data_gov_key = get_backend_secret("DATA_GOV_API_KEY")
     api_col, backup_col = st.columns(2)
     with api_col:
         fetch_gov_clicked = st.button(
@@ -1362,7 +1363,7 @@ with st.sidebar:
         if not data_gov_key.strip():
             st.session_state["gov_api_market_df"] = pd.DataFrame()
             st.session_state["gov_api_market_success"] = False
-            st.session_state["gov_api_market_error"] = "Data.gov.in API key enter karein. CSV backup automatically use hoga."
+            st.session_state["gov_api_market_error"] = "Government live mandi feed is not configured. CSV backup will be used."
         else:
             with st.spinner(f"Data.gov.in se {crop} ke Madhya Pradesh mandi records fetch ho rahe hain..."):
                 gov_df, gov_error = fetch_data_gov_prices(data_gov_key, crop)
@@ -1607,7 +1608,7 @@ if ask_clicked:
             question, crop, all_manual_market_df if not all_manual_market_df.empty else market_df
         )
         if not api_key.strip():
-            st.warning("Please enter your OpenRouter API key in the sidebar.")
+            st.warning("AI assistant temporarily unavailable. Please contact the app administrator.")
         else:
             with st.spinner("Checking your question and optional attachment..."):
                 try:

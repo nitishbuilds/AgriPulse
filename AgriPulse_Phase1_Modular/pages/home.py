@@ -289,7 +289,7 @@ if st.session_state.get("show_contact_us", False):
                         contact_name.strip(), contact_subject, contact_message.strip()
                     )
                 if sent:
-                    st.success("Message Formspree ko successfully submit ho gaya. JLU inbox aur Spam folder mein notification check karo.")
+                    st.success("Thank you for contacting AgriPulse! Your message has been successfully sent to the AgriPulse Team. If you have any further questions or need assistance, please feel free to contact us. — Team AgriPulse")
                 else:
                     st.error("Submission failed. Formspree response: " + (service_message or "Unknown error"))
 

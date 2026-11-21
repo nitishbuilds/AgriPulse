@@ -29,11 +29,10 @@ def get_backend_secret(name: str) -> str:
 FORMSPREE_ENDPOINT = "https://formspree.io/f/mrpqygyo"
 
 
-def send_contact_email(name: str, sender_email: str, subject: str, message: str) -> tuple[bool, str]:
+def send_contact_email(name: str, subject: str, message: str) -> tuple[bool, str]:
     """Submit Contact Us data to Formspree without exposing any email credentials."""
     payload = {
         "name": name,
-        "email": sender_email,
         "subject": subject,
         "message": message,
     }
@@ -274,7 +273,6 @@ if st.session_state.get("show_contact_us", False):
     def contact_us_dialog():
         st.write("AgriPulse team se sampark karne ke liye form bharein.")
         contact_name = st.text_input("Your name", key="contact_name")
-        contact_email = st.text_input("Email address", key="contact_email")
         contact_subject = st.selectbox(
             "Subject",
             ["General Enquiry", "Technical Support", "Crop / Pest Assistance", "Feedback"],
@@ -283,15 +281,12 @@ if st.session_state.get("show_contact_us", False):
         contact_message = st.text_area("Your message", key="contact_message")
 
         if st.button("Submit", type="primary", use_container_width=True, key="contact_submit"):
-            if not (contact_name.strip() and contact_email.strip() and contact_message.strip()):
-                st.warning("Please name, email aur message fill karein.")
-            elif not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", contact_email.strip()):
-                st.warning("Valid email address enter karein.")
+            if not (contact_name.strip() and contact_message.strip()):
+                st.warning("Please name aur message fill karein.")
             else:
                 with st.spinner("Sending message..."):
                     sent, service_message = send_contact_email(
-                        contact_name.strip(), contact_email.strip(),
-                        contact_subject, contact_message.strip()
+                        contact_name.strip(), contact_subject, contact_message.strip()
                     )
                 if sent:
                     st.success("Message Formspree ko successfully submit ho gaya. JLU inbox aur Spam folder mein notification check karo.")

@@ -7,8 +7,6 @@ import re
 import os
 import time
 import base64
-import smtplib
-from email.message import EmailMessage
 import numpy as np
 from PIL import Image
 from datetime import date, datetime
@@ -27,28 +25,38 @@ def get_backend_secret(name: str) -> str:
 
 
 
-def send_contact_email(name: str, sender_email: str, subject: str, message: str) -> bool:
-    """Send a contact request server-side using private Streamlit Secrets."""
-    smtp_user = get_backend_secret("SMTP_USER")
-    smtp_password = get_backend_secret("SMTP_APP_PASSWORD")
-    contact_inbox = get_backend_secret("CONTACT_EMAIL")
-    if not all((smtp_user, smtp_password, contact_inbox)):
-        return False
+# Demo contact inbox: no Gmail password, SMTP, or extra API key required.
+CONTACT_INBOX = "jlu09408@student.jlu.edu.in"
 
-    email = EmailMessage()
-    email["From"] = smtp_user
-    email["To"] = contact_inbox
-    email["Reply-To"] = sender_email
-    email["Subject"] = f"AgriPulse Contact: {subject}"
-    email.set_content(
-        f"New AgriPulse contact request\n\n"
-        f"Name: {name}\nEmail: {sender_email}\nSubject: {subject}\n\n"
-        f"Message:\n{message}"
-    )
-    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
-        smtp.login(smtp_user, smtp_password)
-        smtp.send_message(email)
-    return True
+
+def send_contact_email(name: str, sender_email: str, subject: str, message: str) -> tuple[bool, str]:
+    """Forward a contact enquiry to FormSubmit from the Streamlit backend.
+
+    The inbox owner must activate the form from the first verification email.
+    """
+    payload = {
+        "name": name,
+        "email": sender_email,
+        "subject": subject,
+        "message": message,
+        "_subject": f"AgriPulse Contact: {subject}",
+        "_replyto": sender_email,
+        "_captcha": "false",  # Demo-only: FormSubmit may apply anti-spam limits.
+        "_template": "table",
+    }
+    try:
+        response = requests.post(
+            f"https://formsubmit.co/ajax/{CONTACT_INBOX}",
+            json=payload,
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+            timeout=20,
+        )
+        response.raise_for_status()
+        data = response.json()
+        success = str(data.get("success", "false")).lower() == "true"
+        return success, str(data.get("message", ""))
+    except (requests.RequestException, ValueError) as exc:
+        return False, f"FormSubmit request failed: {type(exc).__name__}"
 
 
 st.set_page_config(
@@ -273,17 +281,16 @@ if st.session_state.get("show_contact_us", False):
                 st.warning("Please name, email aur message fill karein.")
             elif not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", contact_email.strip()):
                 st.warning("Valid email address enter karein.")
-            elif not all(get_backend_secret(k) for k in ("SMTP_USER", "SMTP_APP_PASSWORD", "CONTACT_EMAIL")):
-                st.error("Contact email abhi configure nahi hai. Please baad mein try karein.")
             else:
-                try:
-                    send_contact_email(
+                with st.spinner("Sending message..."):
+                    sent, service_message = send_contact_email(
                         contact_name.strip(), contact_email.strip(),
                         contact_subject, contact_message.strip()
                     )
-                    st.success("Message sent! AgriPulse team ko email mil gayi hai.")
-                except (smtplib.SMTPException, OSError, TimeoutError):
-                    st.error("Email send nahi ho payi. Please thodi der baad retry karein.")
+                if sent:
+                    st.success("Form submitted! First-time setup mein JLU inbox ki FormSubmit activation email confirm karo. Confirmation ke baad messages inbox mein aayenge.")
+                else:
+                    st.error("Message deliver nahi hua. FormSubmit response: " + (service_message or "Unknown error"))
 
         if st.button("Close", use_container_width=True, key="contact_close"):
             st.session_state["show_contact_us"] = False

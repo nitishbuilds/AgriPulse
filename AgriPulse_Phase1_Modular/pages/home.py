@@ -7,6 +7,8 @@ import re
 import os
 import time
 import base64
+import smtplib
+from email.message import EmailMessage
 import numpy as np
 from PIL import Image
 from datetime import date, datetime
@@ -22,6 +24,31 @@ def get_backend_secret(name: str) -> str:
         return str(st.secrets.get(name, "")).strip()
     except (FileNotFoundError, KeyError):
         return ""
+
+
+
+def send_contact_email(name: str, sender_email: str, subject: str, message: str) -> bool:
+    """Send a contact request server-side using private Streamlit Secrets."""
+    smtp_user = get_backend_secret("SMTP_USER")
+    smtp_password = get_backend_secret("SMTP_APP_PASSWORD")
+    contact_inbox = get_backend_secret("CONTACT_EMAIL")
+    if not all((smtp_user, smtp_password, contact_inbox)):
+        return False
+
+    email = EmailMessage()
+    email["From"] = smtp_user
+    email["To"] = contact_inbox
+    email["Reply-To"] = sender_email
+    email["Subject"] = f"AgriPulse Contact: {subject}"
+    email.set_content(
+        f"New AgriPulse contact request\n\n"
+        f"Name: {name}\nEmail: {sender_email}\nSubject: {subject}\n\n"
+        f"Message:\n{message}"
+    )
+    with smtplib.SMTP_SSL("smtp.gmail.com", 465, timeout=15) as smtp:
+        smtp.login(smtp_user, smtp_password)
+        smtp.send_message(email)
+    return True
 
 
 st.set_page_config(
@@ -242,10 +269,21 @@ if st.session_state.get("show_contact_us", False):
         contact_message = st.text_area("Your message", key="contact_message")
 
         if st.button("Submit", type="primary", use_container_width=True, key="contact_submit"):
-            if contact_name.strip() and contact_email.strip() and contact_message.strip():
-                st.success("Form validated. Email/database delivery abhi configure nahi hai.")
-            else:
+            if not (contact_name.strip() and contact_email.strip() and contact_message.strip()):
                 st.warning("Please name, email aur message fill karein.")
+            elif not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", contact_email.strip()):
+                st.warning("Valid email address enter karein.")
+            elif not all(get_backend_secret(k) for k in ("SMTP_USER", "SMTP_APP_PASSWORD", "CONTACT_EMAIL")):
+                st.error("Contact email abhi configure nahi hai. Please baad mein try karein.")
+            else:
+                try:
+                    send_contact_email(
+                        contact_name.strip(), contact_email.strip(),
+                        contact_subject, contact_message.strip()
+                    )
+                    st.success("Message sent! AgriPulse team ko email mil gayi hai.")
+                except (smtplib.SMTPException, OSError, TimeoutError):
+                    st.error("Email send nahi ho payi. Please thodi der baad retry karein.")
 
         if st.button("Close", use_container_width=True, key="contact_close"):
             st.session_state["show_contact_us"] = False

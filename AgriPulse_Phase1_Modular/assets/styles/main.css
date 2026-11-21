@@ -1,0 +1,69 @@
+/* Text-only AgriPulse wordmark: crisp fonts, no image logo */
+    .agri-brand {
+        margin: 0.15rem 0 0.7rem 0;
+        line-height: 1.05;
+    }
+    .agri-brand-name {
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: clamp(2.7rem, 5vw, 4.1rem);
+        font-weight: 800;
+        letter-spacing: -0.055em;
+        line-height: 1.0;
+        white-space: nowrap;
+    }
+    .agri-word {
+        color: #287a43;
+    }
+    .pulse-word {
+        color: #079aa6;
+    }
+    .agri-tagline {
+        margin-top: 0.28rem;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-size: clamp(1.05rem, 2.15vw, 1.7rem);
+        font-weight: 400;
+        letter-spacing: -0.025em;
+        line-height: 1.25;
+        color: var(--text-color);
+    }
+    @media (max-width: 640px) {
+        .agri-brand-name { font-size: 2.65rem; }
+        .agri-tagline { font-size: 1rem; }
+    }
+    h1 {
+        font-size: 2.05rem !important;
+        line-height: 1.22 !important;
+        margin-top: 0.15rem !important;
+        margin-bottom: 0.55rem !important;
+    }
+    div[data-testid="stHorizontalBlock"] .agri-nav-anchor { display: none; }
+    div[data-testid="stButton"] button {
+        font-size: 0.92rem !important;
+        font-weight: 500 !important;
+        white-space: nowrap !important;
+    }
+    /* Reduce the excessive blank area around the welcome message and chat input */
+    div[data-testid="stAlert"] {
+        padding: 0.7rem 1rem !important;
+        margin-bottom: 0.25rem !important;
+    }
+    div[data-testid="stElementContainer"]:has([data-testid="stCaptionContainer"]) {
+        margin-top: 0 !important;
+        margin-bottom: 0.15rem !important;
+    }
+    hr {
+        margin-top: 0.45rem !important;
+        margin-bottom: 0.45rem !important;
+    }
+    div[data-testid="stTextArea"] {
+        margin-top: 0 !important;
+    }
+    div[data-testid="stButton"] button[kind="primary"] {
+        background: #238636 !important;
+        border-color: #238636 !important;
+        color: white !important;
+    }
+    div[data-testid="stButton"] button[kind="primary"]:hover {
+        background: #1b6e2b !important;
+        border-color: #1b6e2b !important;
+    }

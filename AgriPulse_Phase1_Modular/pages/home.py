@@ -34,7 +34,11 @@ def send_contact_email(name: str, sender_email: str, subject: str, message: str)
 
     The inbox owner must activate the form from the first verification email.
     """
+    # FormSubmit needs the origin of the page; server-side requests do not
+    # automatically provide the browser Referer header.
+    page_url = st.context.url
     payload = {
+        "_url": page_url,
         "name": name,
         "email": sender_email,
         "subject": subject,
@@ -48,12 +52,16 @@ def send_contact_email(name: str, sender_email: str, subject: str, message: str)
         response = requests.post(
             f"https://formsubmit.co/ajax/{CONTACT_INBOX}",
             json=payload,
-            headers={"Accept": "application/json", "Content-Type": "application/json"},
+            headers={
+                "Accept": "application/json",
+                "Content-Type": "application/json",
+                "Referer": page_url,
+            },
             timeout=20,
         )
         response.raise_for_status()
         data = response.json()
-        success = str(data.get("success", "false")).lower() == "true"
+        success = str(data.get("success", "false")).strip().lower() == "true"
         return success, str(data.get("message", ""))
     except (requests.RequestException, ValueError) as exc:
         return False, f"FormSubmit request failed: {type(exc).__name__}"

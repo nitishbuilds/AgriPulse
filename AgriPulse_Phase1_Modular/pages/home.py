@@ -90,61 +90,102 @@ with st.sidebar:
 
 
 
-# ---------------- LOCAL ML MODEL (PlantVillage / MobileNetV2) ----------------
-# Relative paths work on Streamlit Cloud, local machines, and Colab.
-# Optional environment overrides let Colab keep using models in /content.
-MODEL_PATH = Path(os.environ.get("AGRIPULSE_MODEL_PATH", str(PROJECT_ROOT / "models" / "agripulse_plant_disease.keras")))
-LABELS_PATH = Path(os.environ.get("AGRIPULSE_LABELS_PATH", str(PROJECT_ROOT / "models" / "agripulse_labels.json")))
+# ---------------- AGRIPULSE ML 2.0 (TWO SEPARATE TRAINED MODELS) ----------------
+# Crop is recognized automatically from the uploaded photo, irrespective of the
+# farmer's sidebar crop preference (which remains for mandi/weather features).
+ML2_MODELS_DIR = PROJECT_ROOT / "models"
+ML2_CROP_PATH = ML2_MODELS_DIR / "crop_identifier.keras"
+ML2_DISEASE_PATH = ML2_MODELS_DIR / "disease_detector.keras"
+ML2_METADATA_PATH = ML2_MODELS_DIR / "metadata.json"
+
 
 @st.cache_resource(show_spinner=False)
-def load_crop_model():
-    if not os.path.exists(MODEL_PATH) or not os.path.exists(LABELS_PATH):
-        return None, None
-    # Avoid loading TensorFlow at app startup when model files are absent.
+def load_two_stage_models():
+    """Load validated export files only when a user requests leaf detection."""
+    if not all(path.is_file() for path in
+               (ML2_CROP_PATH, ML2_DISEASE_PATH, ML2_METADATA_PATH)):
+        return None, None, None
+
+    with ML2_METADATA_PATH.open("r", encoding="utf-8") as fh:
+        meta = json.load(fh)
+    crop_names = meta["stage1_crop_classes"]
+    disease_names = meta["stage2_disease_classes"]
+    if not crop_names or not disease_names:
+        raise ValueError("ML2 metadata mein crop/disease class names missing hain.")
+
     import tensorflow as tf
-    loaded_model = tf.keras.models.load_model(MODEL_PATH, compile=False)
-    with open(LABELS_PATH, "r", encoding="utf-8") as label_file:
-        loaded_labels = json.load(label_file)
-    return loaded_model, loaded_labels
+    crop_model = tf.keras.models.load_model(str(ML2_CROP_PATH), compile=False)
+    disease_model = tf.keras.models.load_model(str(ML2_DISEASE_PATH), compile=False)
+    if int(crop_model.output_shape[-1]) != len(crop_names):
+        raise ValueError("ML2 crop model output aur metadata class count mismatch.")
+    if int(disease_model.output_shape[-1]) != len(disease_names):
+        raise ValueError("ML2 disease model output aur metadata class count mismatch.")
+    return crop_model, disease_model, meta
 
-def predict_crop_disease(uploaded_file, selected_crop):
-    """Return one compact, consistent crop-condition-confidence result."""
-    supported = {
-        "Maize": "Corn_(maize)",
-        "Potato": "Potato",
-        "Tomato": "Tomato",
-    }
 
-    # The current training dataset has no useful soybean disease classes.
-    if selected_crop == "Soybean":
-        return "Soybean — Disease detection unavailable | Model Confidence: N/A"
+def predict_crop_disease(uploaded_file, selected_crop=None):
+    """Two independent crop/disease predictions; refuse uncertain or conflicting results.
 
-    if selected_crop not in supported:
-        return f"{selected_crop} — Not supported by this ML model | Model Confidence: N/A"
+    selected_crop is accepted only for compatibility with the older app call;
+    it is intentionally NOT used to determine the crop from the image.
+    """
+    crop_model, disease_model, meta = load_two_stage_models()
+    if crop_model is None:
+        return "ML 2.0 models unavailable. Dono .keras files aur metadata.json models/ folder mein upload karein."
 
-    loaded_model, loaded_labels = load_crop_model()
-    if loaded_model is None:
-        return f"{selected_crop} — Model unavailable | Model Confidence: N/A"
+    # IMPORTANT: The exported models include their own 0-255 -> -1..1
+    # normalization. Do NOT divide pixels by 255 or preprocess twice.
+    uploaded_file.seek(0)
+    with Image.open(uploaded_file) as photo:
+        img = photo.convert("RGB").resize(tuple(meta["image_size"]))
+    sample = np.asarray(img, dtype=np.float32)[None, ...]
 
-    image = Image.open(uploaded_file).convert("RGB").resize((224, 224))
-    image_array = np.asarray(image, dtype=np.float32)
-    # Model ke andar MobileNetV2 preprocessing layers already saved hain.
-    # Isliye yahan preprocess_input dobara apply nahi karna; raw 0-255 pixels use karo.
-    probabilities = loaded_model.predict(np.expand_dims(image_array, axis=0), verbose=0)[0]
-    best_index = int(np.argmax(probabilities))
-    label = loaded_labels[best_index]
-    confidence = float(probabilities[best_index])
+    crop_probs = np.asarray(crop_model.predict(sample, verbose=0)[0], dtype=np.float32)
+    if not np.all(np.isfinite(crop_probs)):
+        return "Crop model ne invalid output diya. Image retry karein."
+    crop_idx = int(np.argmax(crop_probs))
+    crop_name = meta["stage1_crop_classes"][crop_idx]
+    crop_score = float(crop_probs[crop_idx])
+    crop_threshold = float(meta.get("crop_validation_threshold", 1.01))
 
-    # Do not display another crop's disease as if it belonged to the selected crop.
-    expected_prefix = supported[selected_crop]
-    if not label.startswith(expected_prefix + "___"):
-        return f"{selected_crop} — Uncertain (crop mismatch) | Model Confidence: {confidence:.1%}"
+    if crop_name == "Other_crop":
+        return "**Crop:** Other / unsupported crop. Is crop ke liye automatic disease result available nahi hai."
+    if crop_score < crop_threshold:
+        return "**Crop:** Uncertain. Crop identify nahi ho rahi; ek clear single-leaf photo upload karein."
 
-    readable_label = label.split("___", 1)[1].replace("_", " ").strip()
-    if confidence < 0.60:
-        readable_label = "Uncertain"
+    disease_probs = np.asarray(disease_model.predict(sample, verbose=0)[0], dtype=np.float32)
+    if not np.all(np.isfinite(disease_probs)):
+        return "Disease model ne invalid output diya. Image retry karein."
+    disease_idx = int(np.argmax(disease_probs))
+    class_label = meta["stage2_disease_classes"][disease_idx]
+    disease_crop, condition = class_label.split("___", 1)
+    disease_score = float(disease_probs[disease_idx])
+    disease_threshold = float(meta.get("disease_validation_threshold", 1.01))
+    display_crop = meta.get("stage1_crop_display", {}).get(crop_name, crop_name)
 
-    return f"{selected_crop} — {readable_label} | Model Confidence: {confidence:.1%}"
+    if disease_crop != crop_name:
+        return (
+            f"**Crop detected:** {display_crop} | **Disease:** Not reported. "
+            "Crop aur disease models agree nahi kar rahe. "
+            "Dusri clear leaf photo upload karein."
+        )
+    if disease_score < disease_threshold:
+        return (
+            f"**Crop detected:** {display_crop} | **Condition:** Uncertain. "
+            "Disease model confident nahi hai; clearer photo upload karein."
+        )
+
+    readable_condition = condition.replace("_", " ").strip()
+    if readable_condition.lower() == "healthy":
+        readable_condition = "Healthy (model prediction)"
+    return (
+        f"**Detected crop:** {display_crop}\n\n"
+        f"**Leaf condition:** {readable_condition}\n\n"
+        f"**Crop model score:** {crop_score:.1%} | "
+        f"**Disease model score:** {disease_score:.1%}\n\n"
+        "_Experimental classification; not a confirmed diagnosis. "
+        "Real farm photos par validation pending hai._"
+    )
 
 # ---------------- TOP HEADER + NAVIGATION ----------------
 # Full-width title, followed by equally sized navigation buttons.
@@ -361,7 +402,7 @@ if "attachment_mode" not in st.session_state:
 uploaded_image = None
 attachment_mode = st.session_state.get("attachment_mode")
 if attachment_mode == "crop_photo":
-    st.caption("Crop ki clear photo upload karein. Affected leaf ka close-up helpful hai.")
+    st.caption("Ek clear leaf photo upload karein. Crop automatically identify hogi, phir disease check hogi.")
     uploaded_image = st.file_uploader(
         "Upload crop / leaf photo", type=["jpg", "jpeg", "png", "webp"],
         key="crop_photo_upload", help="JPG, PNG, WEBP; maximum 8 MB."
@@ -1521,7 +1562,7 @@ with st.sidebar:
 if uploaded_image is not None and uploaded_image.size <= 8 * 1024 * 1024 and attachment_mode == "crop_photo":
     try:
         with ml_result_slot.container():
-            with st.spinner("Local ML model photo check kar raha hai..."):
+            with st.spinner("ML 2.0: pehle crop identify, phir disease check ho raha hai..."):
                 current_ml_diagnosis = predict_crop_disease(uploaded_image, crop)
             st.markdown("**AgriPulse ML — Photo result**")
             st.info(current_ml_diagnosis)

@@ -1,0 +1,54 @@
+{
+  "project": "AgriPulse",
+  "version": "ml2_two_stage_experimental",
+  "dataset": "tensorflow_datasets/plant_village:1.0.2",
+  "image_size": [
+    160,
+    160
+  ],
+  "pixel_input": "RGB float32 in 0..255; normalization built into the models",
+  "stage1_crop_classes": [
+    "Corn",
+    "Potato",
+    "Strawberry",
+    "Tomato",
+    "Other_crop"
+  ],
+  "stage1_crop_display": {
+    "Corn": "Maize",
+    "Potato": "Potato",
+    "Strawberry": "Strawberry",
+    "Tomato": "Tomato",
+    "Other_crop": "Other / unsupported crop"
+  },
+  "stage2_disease_classes": [
+    "Corn___Cercospora_leaf_spot Gray_leaf_spot",
+    "Corn___Common_rust",
+    "Corn___healthy",
+    "Corn___Northern_Leaf_Blight",
+    "Potato___Early_blight",
+    "Potato___healthy",
+    "Potato___Late_blight",
+    "Strawberry___healthy",
+    "Strawberry___Leaf_scorch",
+    "Tomato___Bacterial_spot",
+    "Tomato___Early_blight",
+    "Tomato___healthy",
+    "Tomato___Late_blight",
+    "Tomato___Leaf_Mold",
+    "Tomato___Septoria_leaf_spot",
+    "Tomato___Spider_mites Two-spotted_spider_mite",
+    "Tomato___Target_Spot",
+    "Tomato___Tomato_mosaic_virus",
+    "Tomato___Tomato_Yellow_Leaf_Curl_Virus"
+  ],
+  "crop_validation_threshold": 0.5,
+  "disease_validation_threshold": 0.715,
+  "crop_validation_accepted_precision": 0.9637286457043823,
+  "crop_validation_coverage": 0.9916523447090596,
+  "disease_validation_accepted_precision": 0.9514851485148514,
+  "disease_validation_coverage": 0.792156862745098,
+  "crop_test_accuracy": 0.962676465511322,
+  "disease_test_accuracy": 0.874093234539032,
+  "warning": "Not validated on real farm imagery; not a diagnosis."
+}

@@ -25,46 +25,44 @@ def get_backend_secret(name: str) -> str:
 
 
 
-# Demo contact inbox: no Gmail password, SMTP, or extra API key required.
-CONTACT_INBOX = "jlu09408@student.jlu.edu.in"
+# Formspree form endpoint (public form ID; no Gmail password required).
+FORMSPREE_ENDPOINT = "https://formspree.io/f/mrpqygyo"
 
 
 def send_contact_email(name: str, sender_email: str, subject: str, message: str) -> tuple[bool, str]:
-    """Forward a contact enquiry to FormSubmit from the Streamlit backend.
-
-    The inbox owner must activate the form from the first verification email.
-    """
-    # FormSubmit needs the origin of the page; server-side requests do not
-    # automatically provide the browser Referer header.
-    page_url = st.context.url
+    """Submit Contact Us data to Formspree without exposing any email credentials."""
     payload = {
-        "_url": page_url,
         "name": name,
         "email": sender_email,
         "subject": subject,
         "message": message,
-        "_subject": f"AgriPulse Contact: {subject}",
-        "_replyto": sender_email,
-        "_captcha": "false",  # Demo-only: FormSubmit may apply anti-spam limits.
-        "_template": "table",
     }
     try:
         response = requests.post(
-            f"https://formsubmit.co/ajax/{CONTACT_INBOX}",
-            json=payload,
-            headers={
-                "Accept": "application/json",
-                "Content-Type": "application/json",
-                "Referer": page_url,
-            },
+            FORMSPREE_ENDPOINT,
+            data=payload,
+            headers={"Accept": "application/json"},
             timeout=20,
         )
-        response.raise_for_status()
-        data = response.json()
-        success = str(data.get("success", "false")).strip().lower() == "true"
-        return success, str(data.get("message", ""))
-    except (requests.RequestException, ValueError) as exc:
-        return False, f"FormSubmit request failed: {type(exc).__name__}"
+    except requests.RequestException as exc:
+        return False, f"Network error: {type(exc).__name__}."
+
+    try:
+        result = response.json()
+    except ValueError:
+        return False, f"Formspree returned HTTP {response.status_code} (non-JSON response)."
+
+    if not response.ok:
+        errors = result.get("errors", []) if isinstance(result, dict) else []
+        details = "; ".join(
+            str(item.get("message", "")) if isinstance(item, dict) else str(item)
+            for item in errors
+        )
+        return False, details or f"Formspree returned HTTP {response.status_code}."
+
+    if isinstance(result, dict) and result.get("ok") is True:
+        return True, "Submission accepted by Formspree."
+    return False, "Formspree did not confirm that the submission was accepted."
 
 
 st.set_page_config(
@@ -296,9 +294,9 @@ if st.session_state.get("show_contact_us", False):
                         contact_subject, contact_message.strip()
                     )
                 if sent:
-                    st.success("Form submitted! First-time setup mein JLU inbox ki FormSubmit activation email confirm karo. Confirmation ke baad messages inbox mein aayenge.")
+                    st.success("Message Formspree ko successfully submit ho gaya. JLU inbox aur Spam folder mein notification check karo.")
                 else:
-                    st.error("Message deliver nahi hua. FormSubmit response: " + (service_message or "Unknown error"))
+                    st.error("Submission failed. Formspree response: " + (service_message or "Unknown error"))
 
         if st.button("Close", use_container_width=True, key="contact_close"):
             st.session_state["show_contact_us"] = False
